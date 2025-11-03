@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MP4 FPS Patcher</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    /* ==== GLOBAL ==== */
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background: linear-gradient(135deg, #0b0010 0%, #18011f 45%, #0b0010 100%);
+      color: #efe7ff;
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    /* ==== CARD (QFrame) ==== */
+    .card {
+      background: rgba(10,8,12,0.74);
+      border-radius: 14px;
+      border: 3px solid rgba(175,100,255,0.9);
+      backdrop-filter: blur(8px);
+      padding: 2rem;
+      width: 100%;
+      max-width: 540px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+
+    /* ==== TITLE (QLabel#main) ==== */
+    .title {
+      color: #d9bfff;
+      font-size: 34px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ==== INPUTS (QLineEdit) ==== */
+    .input-group {
+      margin-bottom: 1.2rem;
+    }
+    .input-group label {
+      display: block;
+      margin-bottom: .4rem;
+      color: #e6d9ff;
+      font-size: 15px;
+    }
+    input[type="file"],
+    input[type="text"] {
+      background: rgba(20,18,22,0.86);
+      border-radius: 10px;
+      border: 1px solid rgba(120,60,200,0.35);
+      padding: 12px;
+      font-size: 16px;
+      color: #efe7ff;
+      width: 100%;
+      transition: border .2s;
+    }
+    input:focus {
+      outline: none;
+      border: 2px solid rgba(175,100,255,0.95);
+    }
+
+    /* ==== SIDE BUTTON (QPushButton[class="side"]) ==== */
+    .btn-side {
+      background: linear-gradient(90deg, rgba(120,60,200,0.06), rgba(120,60,200,0.04));
+      border: 1px solid rgba(160,90,255,0.15);
+      color: #e6d9ff;
+      padding: 12px;
+      font-size: 15px;
+      text-align: left;
+      border-radius: 10px;
+      width: 100%;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .btn-side:hover {
+      background: rgba(130,60,220,0.12);
+      border: 1px solid rgba(200,110,255,0.6);
+      color: #fff;
+    }
+
+    /* ==== MAIN BUTTON (QPushButton) ==== */
+    .btn-main {
+      background: linear-gradient(90deg, #7b47d6, #b968ff);
+      color: #fff;
+      border-radius: 18px;
+      padding: 14px 28px;
+      font-size: 16px;
+      font-weight: 700;
+      border: 2px solid rgba(255,255,255,0.15);
+      min-width: 300px;
+      width: 100%;
+      cursor: pointer;
+      transition: background .25s;
+      margin-top: 1rem;
+    }
+    .btn-main:hover {
+      background: linear-gradient(90deg, #8f56e8, #d88bff);
+    }
+
+    /* ==== LOG AREA (QTextEdit) ==== */
+    #log {
+      background: linear-gradient(135deg, rgba(0,0,0,0.92), rgba(10,6,10,0.92));
+      color: #dbeef0;
+      border-radius: 8px;
+      border: 1px solid rgba(120,60,200,0.22);
+      padding: 12px;
+      font-family: Consolas, monospace;
+      font-size: 13px;
+      min-height: 80px;
+      margin-top: 1rem;
+      resize: none;
+      display: none;
+    }
+
+    /* ==== PROGRESS ==== */
+    .progress-container { margin-top: .8rem; display:none; }
+    .progress-bar {
+      height: 6px;
+      background: rgba(175,100,255,0.4);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: #b968ff;
+      transition: width .4s ease;
+    }
+
+    /* ==== UTILS ==== */
+    .mt-2 { margin-top: .5rem; }
+    .text-success { color: #a0f7a0; }
+    .text-danger { color: #ffa0a0; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="title">MP4 FPS Patcher</div>
+
+  <form id="uploadForm" enctype="multipart/form-data">
+    <div class="input-group">
+      <label>Input MP4</label>
+      <input type="file" accept=".mp4" required />
+    </div>
+
+    <div class="input-group">
+      <label>Desired FPS</label>
+      <input type="text" id="fps" placeholder="e.g. 60" required />
+    </div>
+
+    <button type="submit" class="btn-main">Patch &amp; Download</button>
+  </form>
+
+  <div id="status" class="mt-2 text-center"></div>
+
+  <div class="progress-container" id="progressContainer">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <textarea id="log" readonly></textarea>
+</div>
+
+<script>
+  const form = document.getElementById('uploadForm');
+  const status = document.getElementById('status');
+  const log = document.getElementById('log');
+  const progContainer = document.getElementById('progressContainer');
+  const progFill = document.getElementById('progressFill');
+
+  const setProgress = (pct) => {
+    progFill.style.width = pct + '%';
+  };
+
+  const showLog = (msg) => {
+    log.style.display = 'block';
+    log.value += msg + '\n';
+    log.scrollTop = log.scrollHeight;
+  };
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const file = form.querySelector('input[type=file]').files[0];
+    const fps = document.getElementById('fps').value.trim();
+
+    if (!file || !fps) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('fps', fps);
+
+    // Reset UI
+    status.innerHTML = '';
+    log.value = '';
+    log.style.display = 'none';
+    progContainer.style.display = 'block';
+    setProgress(0);
+
+    try {
+      status.innerHTML = 'Uploading...';
+      setProgress(30);
+      showLog('→ Uploading file...');
+
+      const res = await fetch('/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (data.error) {
+        status.innerHTML = `<span class="text-danger">${data.error}</span>`;
+        showLog(`✗ ${data.error}`);
+        progContainer.style.display = 'none';
+        return;
+      }
+
+      setProgress(70);
+      showLog(`→ Original FPS: ${data.info.split('→')[0].trim()}`);
+      showLog(`→ Target FPS: ${fps}`);
+      showLog(`→ Scale factor: ${(data.info.match(/scale ([\d.]+)/)||[])[1]}`);
+
+      setProgress(100);
+      status.innerHTML = `<span class="text-success">${data.info}</span><br>
+        <a href="${data.download_url}" class="btn-main" style="display:inline-block;margin-top:1rem;">
+          Download Patched MP4
+        </a>`;
+      showLog('✓ Patching complete!');
+
+    } catch (err) {
+      status.innerHTML = `<span class="text-danger">Error: ${err.message}</span>`;
+      showLog(`✗ ${err.message}`);
+    }
+  };
+</script>
+
+</body>
+</html>
