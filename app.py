@@ -1,4 +1,4 @@
-# app.py — WEB VERSION ONLY (NO TKINTER!)
+# app.py – Flask web version (NO GUI, NO tkinter)
 import os
 import struct
 import subprocess
@@ -10,28 +10,33 @@ from pathlib import Path
 # ------------------- CONFIG -------------------
 UPLOAD_FOLDER = "uploads"
 RESULT_FOLDER = "results"
-FFMPEG_BIN = "./ffmpeg/bin"           # Linux ffprobe in repo
+FFMPEG_BIN = "./ffmpeg/bin"
 FFPROBE_PATH = os.path.join(FFMPEG_BIN, "ffprobe")
+
+# DEBUG – check ffprobe
+print(f"FFPROBE_PATH: {FFPROBE_PATH}")
+print(f"Exists: {os.path.exists(FFPROBE_PATH)}")
+print(f"Executable: {os.access(FFPROBE_PATH, os.X_OK) if os.path.exists(FFPROBE_PATH) else False}")
 # ---------------------------------------------
 
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["RESULT_FOLDER"] = RESULT_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
+app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
 Path(UPLOAD_FOLDER).mkdir(exist_ok=True)
 Path(RESULT_FOLDER).mkdir(exist_ok=True)
 
 
-def allowed_file(filename):
+def allowed_file(filename: str) -> bool:
     return filename.lower().endswith('.mp4')
 
 
-def detect_original_fps(filepath):
+def detect_original_fps(filepath: str):
     try:
         result = subprocess.run(
-            [FFPROBE_PATH, "-v", "0", "-of", "csv=p=0", "-select_streams", "v:0",
-             "-show_entries", "stream=r_frame_rate", filepath],
+            [FFPROBE_PATH, "-v", "0", "-of", "csv=p=0",
+             "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", filepath],
             capture_output=True, text=True, check=True
         )
         fps_text = result.stdout.strip()
@@ -44,15 +49,15 @@ def detect_original_fps(filepath):
         return None
 
 
-def patch_atom(data, atom_name, scale_factor):
-    atom_bytes = atom_name.encode()
+def patch_atom(data: bytearray, atom_name: bytes, scale_factor: float):
     count = start = 0
     while True:
-        found = data.find(atom_bytes, start)
-        if found == -1: break
+        found = data.find(atom_name, start)
+        if found == -1:
+            break
         size_offset = found - 4
         if size_offset < 0:
-            start = found + len(atom_bytes)
+            start = found + len(atom_name)
             continue
         ts_off = found + 12
         dur_off = found + 16
@@ -62,17 +67,17 @@ def patch_atom(data, atom_name, scale_factor):
             data[ts_off:ts_off+4] = struct.pack(">I", int(ts * scale_factor))
             data[dur_off:dur_off+4] = struct.pack(">I", int(dur * scale_factor))
         count += 1
-        start = found + len(atom_bytes)
+        start = found + len(atom_name)
     return count
 
 
-def patch_mp4(input_path, output_path, scale_factor):
-    with open(input_path, 'rb') as f:
+def patch_mp4(in_path: str, out_path: str, scale: float):
+    with open(in_path, "rb") as f:
         data = bytearray(f.read())
-    patched = patch_atom(data, b'mvhd', scale_factor) + patch_atom(data, b'mdhd', scale_factor)
-    with open(output_path, 'wb') as f:
+    patch_atom(data, b"mvhd", scale)
+    patch_atom(data, b"mdhd", scale)
+    with open(out_path, "wb") as f:
         f.write(data)
-    return patched
 
 
 @app.route("/")
@@ -90,19 +95,19 @@ def upload():
         return jsonify(error="Invalid input"), 400
 
     try:
-        desired_fps = float(re.sub(r'[^0-9.]', '', fps_str))
+        desired_fps = float(re.sub(r"[^0-9.]", "", fps_str))
         if desired_fps <= 0:
-            raise ValueError()
-    except:
+            raise ValueError
+    except Exception:
         return jsonify(error="Invalid FPS"), 400
 
-    filename = secure_filename(file.filename)
-    in_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-    out_path = os.path.join(app.config["RESULT_FOLDER"], "patched_" + filename)
+    safe_name = secure_filename(file.filename)
+    in_path = os.path.join(app.config["UPLOAD_FOLDER"], safe_name)
+    out_path = os.path.join(app.config["RESULT_FOLDER"], "patched_" + safe_name)
     file.save(in_path)
 
     orig_fps = detect_original_fps(in_path)
-    if not orig_fps:
+    if orig_fps is None:
         os.remove(in_path)
         return jsonify(error="Could not detect original FPS"), 500
 
@@ -122,12 +127,14 @@ def download(filename):
     path = os.path.join(app.config["RESULT_FOLDER"], filename)
     if not os.path.exists(path):
         abort(404)
-    response = send_file(path, as_attachment=True)
-    @response.call_on_close
+    resp = send_file(path, as_attachment=True)
+    @resp.call_on_close
     def cleanup():
-        try: os.remove(path)
-        except: pass
-    return response
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+    return resp
 
 
 if __name__ == "__main__":
